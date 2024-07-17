@@ -1,0 +1,31 @@
+[package]
+name = "tracing-otlp"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tracing = "0.1"
+file-rotate = "0.7"
+tracing-appender = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tower-http = { version = "0.4", features = ["cors", "fs"] }
+## OTLP
+opentelemetry = { version = "0.22" }
+tracing-opentelemetry = { version = "0.23", features = ["metrics"] } 
+# opentelemetry-jaeger = "0.20"
+opentelemetry_sdk = { version = "0.22", features = ["rt-tokio"] }
+# opentelemetry-prometheus = { version = "0.15", optional = true }
+opentelemetry-otlp = { version = "0.15", features = ["metrics"] }
+opentelemetry-semantic-conventions = { version = "0.14" }
+prometheus-client = { version = "0.22" }
+autometrics = { version = "1.0", features = ["prometheus-client-0_22", "otel-push-exporter-tokio", "exemplars-tracing", "prometheus-exporter"] }
+
+thiserror = "1.0"
+error-stack = "0.4"
+
+clap = { version = "4.4", features = ["derive", "cargo"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.9"
+serde_with = "3.3"
+tokio = { version = "1", features = ["rt", "macros", "rt-multi-thread" ] }
+axum = { version = "0.6", features = ["headers"] }
