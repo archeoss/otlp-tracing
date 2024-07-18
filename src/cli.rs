@@ -1,5 +1,4 @@
 use clap::Parser;
-use error_stack::Report;
 use error_stack::{Result, ResultExt};
 use thiserror::Error;
 
@@ -41,10 +40,6 @@ impl TryFrom<Args> for Config {
 pub struct Config {
     /// Server address <host:port>
     pub address: SocketAddr,
-
-    /// Enable Default Cors configuration
-    #[serde(default = "Config::default_cors")]
-    pub cors_allow_all: bool,
 
     /// [`Logger`](LoggerConfig) Configuration
     #[serde(default)]
@@ -103,7 +98,6 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             address: SocketAddr::from(([0, 0, 0, 0], 7000)),
-            cors_allow_all: Self::default_cors(),
             logger: LoggerConfig::default(),
         }
     }
@@ -120,11 +114,6 @@ impl Default for LoggerConfig {
 }
 
 impl Config {
-    #[must_use]
-    pub const fn default_cors() -> bool {
-        false
-    }
-
     #[must_use]
     pub const fn default_timeout() -> Duration {
         Duration::from_millis(5000)

@@ -1,19 +1,18 @@
-use std::path::PathBuf;
+use std::{time::Duration};
 
 use crate::cli::LoggerConfig;
 
-use error_stack::{Context, Report, Result, ResultExt};
+use error_stack::{Result, ResultExt};
 use file_rotate::{suffix::AppendTimestamp, ContentLimit, FileRotate};
 use thiserror::Error;
-use tower_http::cors::CorsLayer;
 use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
 use tracing_subscriber::{filter::LevelFilter, prelude::*, util::SubscriberInitExt};
 
-use autometrics::objectives::{Objective, ObjectiveLatency, ObjectivePercentile};
-use opentelemetry::KeyValue;
+use autometrics::{objectives::{Objective, ObjectiveLatency, ObjectivePercentile}};
+use opentelemetry::{KeyValue, trace::TracerProvider as _};
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{runtime, trace as sdktrace, Resource};
-use tracing_opentelemetry::OpenTelemetryLayer;
+use tracing_opentelemetry::{MetricsLayer, OpenTelemetryLayer};
 
 pub const API_SLO: Objective = Objective::new("api")
     // We expect 99.9% of all requests to succeed.
@@ -61,12 +60,22 @@ pub trait LoggerExt {
     /// is disabled
     fn non_blocking_stdout_writer(&self) -> Result<(NonBlocking, WorkerGuard), LoggerError>;
 
-    /// Init OTLP exporter
-    fn init_metrics<
+    /// Init OTLP Trace exporter
+    fn init_tracer<
         S: tracing::Subscriber + for<'span> tracing_subscriber::registry::LookupSpan<'span>,
     >(
         &self,
     ) -> Result<OpenTelemetryLayer<S, opentelemetry_sdk::trace::Tracer>, LoggerError>;
+
+    /// Init OTLP Metrics exporter
+    // fn init_metrics(
+    //     &self,
+    // ) -> Result<OtelMeterProvider, LoggerError>;
+    fn init_metrics<
+        S: tracing::Subscriber + for<'span> tracing_subscriber::registry::LookupSpan<'span>,
+    >(
+        &self,
+    ) -> Result<MetricsLayer<S>, LoggerError>;
 }
 
 impl LoggerExt for LoggerConfig {
@@ -91,10 +100,15 @@ impl LoggerExt for LoggerConfig {
             let layers = layers_iter.fold(first_layer.boxed(), |layer, next_layer| {
                 layer.and_then(next_layer).boxed()
             });
-            let layers = layers.and_then(
-                self.init_metrics()
-                    .change_context(LoggerError::OLTPInitFailed)?,
-            );
+            let layers = layers
+                .and_then(
+                    self.init_tracer()
+                        .change_context(LoggerError::OLTPInitFailed)?,
+                )
+                .and_then(
+                    self.init_metrics()
+                        .change_context(LoggerError::OLTPInitFailed)?,
+                );
             tracing_subscriber::registry().with(layers).init();
         };
 
@@ -143,22 +157,20 @@ impl LoggerExt for LoggerConfig {
         )
     }
 
-    fn init_metrics<
+    fn init_tracer<
         S: tracing::Subscriber + for<'span> tracing_subscriber::registry::LookupSpan<'span>,
     >(
         &self,
     ) -> Result<OpenTelemetryLayer<S, opentelemetry_sdk::trace::Tracer>, LoggerError> {
-        autometrics::prometheus_exporter::init();
+        let exporter = opentelemetry_otlp::new_exporter()
+            .tonic()
+            .with_endpoint("http://localhost:4317");
         let tracer = opentelemetry_otlp::new_pipeline()
             .tracing()
-            .with_exporter(
-                opentelemetry_otlp::new_exporter()
-                    .tonic()
-                    .with_endpoint("http://localhost:4317"),
-            )
+            .with_exporter(exporter)
             .with_trace_config(
                 sdktrace::config()
-                    .with_resource(Resource::new(vec![KeyValue::new("service.name", "bob")])),
+                    .with_resource(Resource::new(vec![KeyValue::new("service.name", "hello")])),
             )
             .install_batch(runtime::Tokio)
             .change_context(LoggerError::OLTPInitFailed)?;
@@ -166,6 +178,30 @@ impl LoggerExt for LoggerConfig {
         let opentelemetry = tracing_opentelemetry::layer().with_tracer(tracer);
 
         Ok(opentelemetry)
+    }
+
+    // fn init_metrics(
+    //     &self,
+    // ) -> Result<OtelMeterProvider, LoggerError> {
+    fn init_metrics<
+        S: tracing::Subscriber + for<'span> tracing_subscriber::registry::LookupSpan<'span>,
+    >(
+        &self,
+    ) -> Result<MetricsLayer<S>, LoggerError> {
+        let exporter = opentelemetry_otlp::new_exporter()
+            .tonic()
+            .with_endpoint("http://localhost:4317");
+
+        let metrics = opentelemetry_otlp::new_pipeline()
+            .metrics(runtime::Tokio)
+            .with_exporter(exporter)
+            .with_period(Duration::from_millis(100))
+            .build()
+            .change_context(LoggerError::OLTPInitFailed)?;
+        autometrics::prometheus_exporter::init();
+
+        Ok(MetricsLayer::new(metrics))
+        // Ok(AutometricsExemplarExtractor::from_fields(&["trace_id"]))
     }
 }
 

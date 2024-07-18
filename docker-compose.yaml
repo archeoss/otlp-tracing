@@ -57,11 +57,11 @@ services:
     # networks:
     #   - grafana
 
-  grafana:
-    image: grafana/grafana-enterprise:latest
-    container_name: grafana
-    ports:
-      - "3000:3000"
+  # grafana:
+  #   image: grafana/grafana-enterprise:latest
+  #   container_name: grafana
+  #   ports:
+  #     - "3000:3000"
     # networks:
     #   - grafana
 
@@ -72,5 +72,5 @@ services:
     ports:
       - "6789:6789"
 
-networks:
-  grafana:
+# networks:
+#   grafana:
